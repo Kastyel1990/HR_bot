@@ -58,7 +58,7 @@ def create_shift_keyboard(shifts: list, date_str: str, vacancy_id: int, prefix: 
         button_text = f"{shift['shift_name']} ({shift['available_count']} мест)"
         keyboard.append([InlineKeyboardButton(
             text=button_text,
-            callback_data=f"{prefix}_{date_str}_{vacancy_id}_{shift['id_shift']}"
+            callback_data=f"{shift}_{date_str}_{vacancy_id}_{shift['id_shift']}"
         )])
     
     keyboard.append([InlineKeyboardButton(text=ButtonText.BACK, callback_data=f"user_vacancy_{date_str}")])
@@ -403,4 +403,114 @@ async def handle_cancel_reservation(callback: types.CallbackQuery, db: DatabaseM
         )],
         [InlineKeyboardButton(
             text=ButtonText.BACK,
-            callback_
+            callback_data=f"user_edit_reservation_{reservation_id}"
+        )]
+    ])
+    
+    await callback.message.edit_text(
+        f"{Emoji.WARNING} Подтверждение отмены\n\n"
+        "Вы действительно хотите отменить запись?\n"
+        "Это действие нельзя будет отменить.",
+        reply_markup=confirm_keyboard
+    )
+
+async def handle_confirm_cancel_reservation(callback: types.CallbackQuery, db: DatabaseManager):
+    """Подтверждение отмены записи"""
+    reservation_id = int(callback.data.split('_')[-1])
+    
+    try:
+        await db.delete_reservation(reservation_id)
+        
+        await callback.message.edit_text(
+            f"{Emoji.SUCCESS} Запись успешно отменена!\n\n"
+            "Вы можете создать новую запись в любое время.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📝 Записаться снова", callback_data="user_reserve")],
+                [InlineKeyboardButton(text=ButtonText.TO_MAIN, callback_data="back_to_main")]
+            ])
+        )
+    except Exception as e:
+        await callback.message.edit_text(
+            f"{Emoji.ERROR} Ошибка при отмене записи!\n\n"
+            "Попробуйте позже или обратитесь к администратору.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=ButtonText.BACK, callback_data="user_edit")],
+                [InlineKeyboardButton(text=ButtonText.TO_MAIN, callback_data="back_to_main")]
+            ])
+        )
+
+async def handle_user_refresh(callback: types.CallbackQuery, db: DatabaseManager):
+    """Обновление информации для пользователя"""
+    user_id = callback.from_user.id
+    user = await db.get_user(user_id)
+    
+    if not user:
+        await callback.answer("❌ Пользователь не найден!")
+        return
+    
+    # Возвращаемся в главное меню с обновленной информацией
+    is_admin = user['is_admin']
+    welcome_text = "👨‍💼 Панель администратора" if is_admin else "👤 Главное меню"
+    
+    await callback.message.edit_text(
+        f"{welcome_text}\n\n🔄 Информация обновлена\n\nВыберите действие:",
+        reply_markup=get_main_menu_keyboard(is_admin)
+    )
+
+# Дополнительные утилиты
+def get_main_menu_keyboard(is_admin=False):
+    """Главное меню с разными кнопками для админа и пользователя"""
+    if is_admin:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📅 Управление календарем", callback_data="admin_calendar")],
+            [InlineKeyboardButton(text="📋 Управление справочником", callback_data="admin_handbook")],
+            [InlineKeyboardButton(text="✅ Подтверждение записей", callback_data="admin_confirmations")],
+            [InlineKeyboardButton(text="📊 Отчеты", callback_data="admin_reports")],
+            [InlineKeyboardButton(text="👥 Управление пользователями", callback_data="admin_users")],
+            [InlineKeyboardButton(text="📢 Рассылка уведомлений", callback_data="admin_broadcast")]
+        ])
+    else:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Записаться на работу", callback_data="user_reserve")],
+            [InlineKeyboardButton(text="✏️ Редактировать запись", callback_data="user_edit")],
+            [InlineKeyboardButton(text="📖 Справочник", callback_data="user_handbook")],
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="user_refresh")]
+        ])
+    return keyboard
+
+# Регистрация обработчиков (для использования в main.py)
+def register_user_handlers(dp, db: DatabaseManager):
+    """Регистрация всех обработчиков пользователей"""
+    
+    # Основные пользовательские действия
+    @dp.callback_query(F.data == "user_reserve")
+    async def user_reserve_callback(callback: types.CallbackQuery):
+        await handle_user_reserve(callback, db)
+    
+    @dp.callback_query(F.data.startswith("user_date_"))
+    async def user_date_callback(callback: types.CallbackQuery):
+        await handle_user_date_selection(callback, db)
+    
+    @dp.callback_query(F.data.startswith("user_vacancy_"))
+    async def user_vacancy_callback(callback: types.CallbackQuery):
+        await handle_user_vacancy_selection(callback, db)
+    
+    @dp.callback_query(F.data.startswith("user_shift_"))
+    async def user_shift_callback(callback: types.CallbackQuery):
+        await handle_user_shift_selection(callback, db)
+    
+    @dp.callback_query(F.data.startswith("user_confirm_"))
+    async def user_confirm_callback(callback: types.CallbackQuery):
+        if callback.data.startswith("user_confirm_cancel_"):
+            await handle_confirm_cancel_reservation(callback, db)
+        else:
+            await handle_user_confirmation(callback, db)
+    
+    # Редактирование записей
+    @dp.callback_query(F.data == "user_edit")
+    async def user_edit_callback(callback: types.CallbackQuery):
+        await handle_user_edit_reservations(callback, db)
+    
+    @dp.callback_query(F.data.startswith("user_edit_reservation_"))
+    async def user_edit_specific_callback(callback: types.CallbackQuery):
+        await handle_edit_specific_reservation
