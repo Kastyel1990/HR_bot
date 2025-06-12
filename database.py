@@ -337,3 +337,16 @@ class DatabaseManager:
             query = """
             SELECT COUNT(*) as reserved_count
             FROM tb_Reservation
+            WHERE date_reservation = ? AND id_shift = ? AND id_vacancy = ?
+            """
+            reserved_result = self._execute_query(query, (nw['date'], nw['id_shift'], nw['id_vacancy']), fetch=True)
+            reserved_count = reserved_result[0]['reserved_count'] if reserved_result else 0
+            
+            calendar_status[date_str]['total_needed'] += nw['need_count']
+            calendar_status[date_str]['total_reserved'] += reserved_count
+            
+            # Проверяем заполненность
+            if reserved_count >= nw['need_count']:
+                calendar_status[date_str]['filled'] = True
+        
+        return calendar_status

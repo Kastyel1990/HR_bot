@@ -1,0 +1,20 @@
+# Telegram Bot Framework
+aiogram==3.13.1
+
+# Database
+pyodbc==5.2.0
+
+# Async support
+aiofiles==24.1.0
+
+# Date and time utilities
+python-dateutil==2.9.0
+
+# Environment variables
+python-dotenv==1.0.1
+
+# Logging
+loguru==0.7.2
+
+# Data validation
+pydantic==2.10.4
