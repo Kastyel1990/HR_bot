@@ -13,6 +13,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from database import DatabaseManager
 from config import Config
 
+
+
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,6 +23,9 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=Config.BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 db = DatabaseManager()
+
+from user_handlers import register_user_handlers
+register_user_handlers(dp, db)
 
 # FSM состояния
 class UserRegistration(StatesGroup):

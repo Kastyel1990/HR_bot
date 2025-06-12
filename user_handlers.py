@@ -15,7 +15,6 @@ def create_date_keyboard(available_dates: dict, prefix: str = "user_date") -> In
     for i in range(7):
         current_date = today + timedelta(days=i)
         date_str = current_date.strftime("%Y-%m-%d")
-        
         # Проверяем доступность даты
         if date_str in available_dates:
             status_emoji = Emoji.PARTIAL if available_dates[date_str]['available_count'] > 0 else Emoji.BUSY
@@ -23,47 +22,38 @@ def create_date_keyboard(available_dates: dict, prefix: str = "user_date") -> In
         else:
             button_text = MessageFormatter.format_calendar_day(current_date) + f" {Emoji.ERROR}"
             continue  # Пропускаем даты без вакансий
-        
         keyboard.append([InlineKeyboardButton(
             text=button_text,
             callback_data=f"{prefix}_{date_str}"
         )])
-    
     keyboard.append([InlineKeyboardButton(text=ButtonText.REFRESH, callback_data="user_refresh")])
     keyboard.append([InlineKeyboardButton(text=ButtonText.BACK, callback_data="back_to_main")])
-    
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def create_vacancy_keyboard(vacancies: list, date_str: str, prefix: str = "user_vacancy") -> InlineKeyboardMarkup:
     """Создание клавиатуры с вакансиями"""
     keyboard = []
-    
     for vacancy in vacancies:
         button_text = f"{vacancy['vacancy_name']} ({vacancy['available_count']} мест)"
         keyboard.append([InlineKeyboardButton(
             text=button_text,
             callback_data=f"{prefix}_{date_str}_{vacancy['id_vacancy']}"
         )])
-    
     keyboard.append([InlineKeyboardButton(text=ButtonText.BACK, callback_data="user_reserve")])
     keyboard.append([InlineKeyboardButton(text=ButtonText.TO_MAIN, callback_data="back_to_main")])
-    
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def create_shift_keyboard(shifts: list, date_str: str, vacancy_id: int, prefix: str = "user_shift") -> InlineKeyboardMarkup:
     """Создание клавиатуры со сменами"""
     keyboard = []
-    
     for shift in shifts:
         button_text = f"{shift['shift_name']} ({shift['available_count']} мест)"
         keyboard.append([InlineKeyboardButton(
             text=button_text,
-            callback_data=f"{shift}_{date_str}_{vacancy_id}_{shift['id_shift']}"
+            callback_data=f"{prefix}_{date_str}_{vacancy_id}_{shift['id_shift']}"
         )])
-    
     keyboard.append([InlineKeyboardButton(text=ButtonText.BACK, callback_data=f"user_vacancy_{date_str}")])
     keyboard.append([InlineKeyboardButton(text=ButtonText.TO_MAIN, callback_data="back_to_main")])
-    
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def create_confirmation_keyboard(date_str: str, vacancy_id: int, shift_id: int) -> InlineKeyboardMarkup:
@@ -82,13 +72,11 @@ def create_confirmation_keyboard(date_str: str, vacancy_id: int, shift_id: int) 
             callback_data="back_to_main"
         )]
     ]
-    
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def create_user_reservations_keyboard(reservations: list) -> InlineKeyboardMarkup:
     """Создание клавиатуры с резервациями пользователя"""
     keyboard = []
-    
     for reservation in reservations:
         date_str = reservation['date_reservation'].strftime('%Y-%m-%d')
         button_text = f"{reservation['date_reservation'].strftime('%d.%m')} - {reservation['vacancy_name']} ({reservation['shift_name']})"
@@ -96,49 +84,42 @@ def create_user_reservations_keyboard(reservations: list) -> InlineKeyboardMarku
             text=button_text,
             callback_data=f"user_edit_reservation_{reservation['id']}"
         )])
-    
     if not reservations:
         keyboard.append([InlineKeyboardButton(
             text="📝 Сделать новую запись",
             callback_data="user_reserve"
         )])
-    
     keyboard.append([InlineKeyboardButton(text=ButtonText.BACK, callback_data="back_to_main")])
-    
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-# Обработчики пользовательских действий
+# ----------------------------------------------
+# ОБРАБОТЧИКИ ДЛЯ ПОЛЬЗОВАТЕЛЯ
+# ----------------------------------------------
+
 async def handle_user_reserve(callback: types.CallbackQuery, db: DatabaseManager):
-    """Начало процесса записи пользователя"""
+    """Первый шаг: выбор даты для записи"""
     user_id = callback.from_user.id
-    
-    # Проверяем регистрацию
     user = await db.get_user(user_id)
     if not user:
         await callback.answer("❌ Сначала необходимо зарегистрироваться!")
         return
-    
     if user['is_blocked']:
         await callback.answer("❌ Ваш аккаунт заблокирован.")
         return
-    
     if user['is_banned']:
         await callback.answer("⚠️ Ваш аккаунт забанен. Функция недоступна.")
         return
-    
+
     # Получаем доступные даты
     available_dates = {}
     today = date.today()
-    
     for i in range(7):
         current_date = today + timedelta(days=i)
         slots = await db.get_available_slots(current_date)
-        
         if slots:
             date_str = current_date.strftime("%Y-%m-%d")
             total_available = sum(slot['available_count'] for slot in slots)
             available_dates[date_str] = {'available_count': total_available}
-    
     if not available_dates:
         await callback.message.edit_text(
             f"{Emoji.INFO} К сожалению, на ближайшие 7 дней нет доступных вакансий.\n\n"
@@ -149,7 +130,6 @@ async def handle_user_reserve(callback: types.CallbackQuery, db: DatabaseManager
             ])
         )
         return
-    
     await callback.message.edit_text(
         f"{Emoji.CALENDAR} Выберите дату для записи:\n\n"
         f"{Emoji.SUCCESS} - есть свободные места\n"
@@ -159,17 +139,13 @@ async def handle_user_reserve(callback: types.CallbackQuery, db: DatabaseManager
     )
 
 async def handle_user_date_selection(callback: types.CallbackQuery, db: DatabaseManager):
-    """Обработка выбора даты"""
+    """Второй шаг: выбор вакансии на выбранную дату"""
     date_str = callback.data.split('_')[-1]
     selected_date = date.fromisoformat(date_str)
-    
-    # Получаем доступные вакансии на выбранную дату
     slots = await db.get_available_slots(selected_date)
-    
     if not slots:
         await callback.answer("❌ На выбранную дату нет доступных мест!")
         return
-    
     # Группируем по вакансиям
     vacancies = {}
     for slot in slots:
@@ -180,9 +156,7 @@ async def handle_user_date_selection(callback: types.CallbackQuery, db: Database
                 'available_count': 0
             }
         vacancies[slot['id_vacancy']]['available_count'] += slot['available_count']
-    
     vacancy_list = list(vacancies.values())
-    
     await callback.message.edit_text(
         f"{Emoji.REGISTER} Запись на {selected_date.strftime('%d.%m.%Y')}\n\n"
         "Выберите должность:",
@@ -190,27 +164,20 @@ async def handle_user_date_selection(callback: types.CallbackQuery, db: Database
     )
 
 async def handle_user_vacancy_selection(callback: types.CallbackQuery, db: DatabaseManager):
-    """Обработка выбора вакансии"""
+    """Третий шаг: выбор смены для вакансии"""
     parts = callback.data.split('_')
     date_str = parts[-2]
     vacancy_id = int(parts[-1])
-    
     selected_date = date.fromisoformat(date_str)
-    
-    # Получаем доступные смены для выбранной вакансии
     slots = await db.get_available_slots(selected_date)
     available_shifts = [
         slot for slot in slots 
         if slot['id_vacancy'] == vacancy_id and slot['available_count'] > 0
     ]
-    
     if not available_shifts:
         await callback.answer("❌ На выбранную вакансию нет доступных смен!")
         return
-    
-    # Получаем название вакансии
     vacancy_name = available_shifts[0]['vacancy_name']
-    
     await callback.message.edit_text(
         f"{Emoji.REGISTER} Запись на {selected_date.strftime('%d.%m.%Y')}\n"
         f"Должность: {vacancy_name}\n\n"
@@ -219,27 +186,21 @@ async def handle_user_vacancy_selection(callback: types.CallbackQuery, db: Datab
     )
 
 async def handle_user_shift_selection(callback: types.CallbackQuery, db: DatabaseManager):
-    """Обработка выбора смены"""
+    """Четвертый шаг: подтверждение записи"""
     parts = callback.data.split('_')
     date_str = parts[-3]
     vacancy_id = int(parts[-2])
     shift_id = int(parts[-1])
-    
     selected_date = date.fromisoformat(date_str)
-    
-    # Получаем информацию о выбранном слоте
     slots = await db.get_available_slots(selected_date)
     selected_slot = next(
         (slot for slot in slots 
          if slot['id_vacancy'] == vacancy_id and slot['id_shift'] == shift_id),
         None
     )
-    
     if not selected_slot or selected_slot['available_count'] <= 0:
         await callback.answer("❌ Выбранное место уже занято!")
         return
-    
-    # Формируем сообщение подтверждения
     confirmation_text = f"""
 {Emoji.SUCCESS} Подтверждение записи
 
@@ -250,31 +211,25 @@ async def handle_user_shift_selection(callback: types.CallbackQuery, db: Databas
 
 Подтвердить запись?
     """
-    
     await callback.message.edit_text(
         confirmation_text,
         reply_markup=create_confirmation_keyboard(date_str, vacancy_id, shift_id)
     )
 
 async def handle_user_confirmation(callback: types.CallbackQuery, db: DatabaseManager):
-    """Подтверждение записи пользователя"""
+    """Финальный шаг: создание резервации"""
     parts = callback.data.split('_')
     date_str = parts[-3]
     vacancy_id = int(parts[-2])
     shift_id = int(parts[-1])
-    
     user_id = callback.from_user.id
     selected_date = date.fromisoformat(date_str)
-    
-    # Проверяем, нет ли уже записи пользователя на эту дату
+    # Проверка: нет ли уже записи пользователя на эту дату
     existing_reservations = await db.get_user_reservations(user_id)
     if any(res['date_reservation'] == selected_date for res in existing_reservations):
         await callback.answer("❌ У вас уже есть запись на эту дату!")
         return
-    
-    # Создаем резервацию
     reservation_id = await db.make_reservation(user_id, selected_date, shift_id, vacancy_id)
-    
     if not reservation_id:
         await callback.message.edit_text(
             f"{Emoji.ERROR} Не удалось создать запись!\n\n"
@@ -288,15 +243,12 @@ async def handle_user_confirmation(callback: types.CallbackQuery, db: DatabaseMa
             ])
         )
         return
-    
-    # Получаем информацию о созданной записи
     slots = await db.get_available_slots(selected_date)
     selected_slot = next(
         (slot for slot in slots 
          if slot['id_vacancy'] == vacancy_id and slot['id_shift'] == shift_id),
         None
     )
-    
     success_text = f"""
 {Emoji.SUCCESS} Запись успешно создана!
 
@@ -308,23 +260,18 @@ async def handle_user_confirmation(callback: types.CallbackQuery, db: DatabaseMa
 {Emoji.INFO} Администратор свяжется с вами для подтверждения.
 До подтверждения вы можете редактировать запись.
     """
-    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Редактировать запись", callback_data="user_edit")],
         [InlineKeyboardButton(text="📝 Записаться еще", callback_data="user_reserve")],
         [InlineKeyboardButton(text=ButtonText.TO_MAIN, callback_data="back_to_main")]
     ])
-    
     await callback.message.edit_text(success_text, reply_markup=keyboard)
-    
     # TODO: Отправить уведомление администратору о новой записи
 
 async def handle_user_edit_reservations(callback: types.CallbackQuery, db: DatabaseManager):
     """Показ списка записей пользователя для редактирования"""
     user_id = callback.from_user.id
-    
     reservations = await db.get_user_reservations(user_id)
-    
     if not reservations:
         await callback.message.edit_text(
             f"{Emoji.INFO} У вас нет активных записей.\n\n"
@@ -335,13 +282,10 @@ async def handle_user_edit_reservations(callback: types.CallbackQuery, db: Datab
             ])
         )
         return
-    
     reservations_text = f"{Emoji.INFO} Ваши записи:\n\n"
     for i, reservation in enumerate(reservations, 1):
         reservations_text += f"{i}. {MessageFormatter.format_reservation(reservation)}\n\n"
-    
     reservations_text += "Выберите запись для редактирования:"
-    
     await callback.message.edit_text(
         reservations_text,
         reply_markup=create_user_reservations_keyboard(reservations)
@@ -350,16 +294,12 @@ async def handle_user_edit_reservations(callback: types.CallbackQuery, db: Datab
 async def handle_edit_specific_reservation(callback: types.CallbackQuery, db: DatabaseManager):
     """Редактирование конкретной записи"""
     reservation_id = int(callback.data.split('_')[-1])
-    
-    # Получаем информацию о записи
     user_id = callback.from_user.id
     reservations = await db.get_user_reservations(user_id)
     reservation = next((r for r in reservations if r['id'] == reservation_id), None)
-    
     if not reservation:
         await callback.answer("❌ Запись не найдена!")
         return
-    
     edit_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="🗑️ Отменить запись",
@@ -380,7 +320,6 @@ async def handle_edit_specific_reservation(callback: types.CallbackQuery, db: Da
         [InlineKeyboardButton(text=ButtonText.BACK, callback_data="user_edit")],
         [InlineKeyboardButton(text=ButtonText.TO_MAIN, callback_data="back_to_main")]
     ])
-    
     edit_text = f"""
 ✏️ Редактирование записи
 
@@ -388,14 +327,11 @@ async def handle_edit_specific_reservation(callback: types.CallbackQuery, db: Da
 
 Что хотите изменить?
     """
-    
     await callback.message.edit_text(edit_text, reply_markup=edit_keyboard)
 
 async def handle_cancel_reservation(callback: types.CallbackQuery, db: DatabaseManager):
-    """Отмена записи пользователя"""
+    """Подтверждение отмены записи"""
     reservation_id = int(callback.data.split('_')[-1])
-    
-    # Подтверждение отмены
     confirm_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=f"{Emoji.ERROR} Да, отменить запись",
@@ -406,7 +342,6 @@ async def handle_cancel_reservation(callback: types.CallbackQuery, db: DatabaseM
             callback_data=f"user_edit_reservation_{reservation_id}"
         )]
     ])
-    
     await callback.message.edit_text(
         f"{Emoji.WARNING} Подтверждение отмены\n\n"
         "Вы действительно хотите отменить запись?\n"
@@ -415,12 +350,10 @@ async def handle_cancel_reservation(callback: types.CallbackQuery, db: DatabaseM
     )
 
 async def handle_confirm_cancel_reservation(callback: types.CallbackQuery, db: DatabaseManager):
-    """Подтверждение отмены записи"""
+    """Конечное удаление записи"""
     reservation_id = int(callback.data.split('_')[-1])
-    
     try:
         await db.delete_reservation(reservation_id)
-        
         await callback.message.edit_text(
             f"{Emoji.SUCCESS} Запись успешно отменена!\n\n"
             "Вы можете создать новую запись в любое время.",
@@ -443,21 +376,16 @@ async def handle_user_refresh(callback: types.CallbackQuery, db: DatabaseManager
     """Обновление информации для пользователя"""
     user_id = callback.from_user.id
     user = await db.get_user(user_id)
-    
     if not user:
         await callback.answer("❌ Пользователь не найден!")
         return
-    
-    # Возвращаемся в главное меню с обновленной информацией
     is_admin = user['is_admin']
     welcome_text = "👨‍💼 Панель администратора" if is_admin else "👤 Главное меню"
-    
     await callback.message.edit_text(
         f"{welcome_text}\n\n🔄 Информация обновлена\n\nВыберите действие:",
         reply_markup=get_main_menu_keyboard(is_admin)
     )
 
-# Дополнительные утилиты
 def get_main_menu_keyboard(is_admin=False):
     """Главное меню с разными кнопками для админа и пользователя"""
     if is_admin:
@@ -478,39 +406,57 @@ def get_main_menu_keyboard(is_admin=False):
         ])
     return keyboard
 
-# Регистрация обработчиков (для использования в main.py)
+# ----------------------------------------------
+# РЕГИСТРАЦИЯ ВСЕХ ОБРАБОТЧИКОВ
+# ----------------------------------------------
+
 def register_user_handlers(dp, db: DatabaseManager):
     """Регистрация всех обработчиков пользователей"""
-    
-    # Основные пользовательские действия
+
     @dp.callback_query(F.data == "user_reserve")
     async def user_reserve_callback(callback: types.CallbackQuery):
         await handle_user_reserve(callback, db)
-    
+
     @dp.callback_query(F.data.startswith("user_date_"))
     async def user_date_callback(callback: types.CallbackQuery):
         await handle_user_date_selection(callback, db)
-    
+
     @dp.callback_query(F.data.startswith("user_vacancy_"))
     async def user_vacancy_callback(callback: types.CallbackQuery):
         await handle_user_vacancy_selection(callback, db)
-    
+
     @dp.callback_query(F.data.startswith("user_shift_"))
     async def user_shift_callback(callback: types.CallbackQuery):
         await handle_user_shift_selection(callback, db)
-    
+
     @dp.callback_query(F.data.startswith("user_confirm_"))
     async def user_confirm_callback(callback: types.CallbackQuery):
         if callback.data.startswith("user_confirm_cancel_"):
             await handle_confirm_cancel_reservation(callback, db)
         else:
             await handle_user_confirmation(callback, db)
-    
+
     # Редактирование записей
     @dp.callback_query(F.data == "user_edit")
     async def user_edit_callback(callback: types.CallbackQuery):
         await handle_user_edit_reservations(callback, db)
-    
+
     @dp.callback_query(F.data.startswith("user_edit_reservation_"))
     async def user_edit_specific_callback(callback: types.CallbackQuery):
-        await handle_edit_specific_reservation
+        await handle_edit_specific_reservation(callback, db)
+
+    @dp.callback_query(F.data.startswith("user_cancel_reservation_"))
+    async def user_cancel_callback(callback: types.CallbackQuery):
+        await handle_cancel_reservation(callback, db)
+
+    # Обновить главное меню (для пользователя)
+    @dp.callback_query(F.data == "user_refresh")
+    async def user_refresh_callback(callback: types.CallbackQuery):
+        await handle_user_refresh(callback, db)
+
+    # TODO: Добавить обработчики изменения даты, смены, вакансии в записи для пользователя
+    # TODO: Добавить админские обработчики, когда реализуешь admin_handlers.py
+
+# ----------------------------------------------
+# END user_handlers.py
+# ----------------------------------------------

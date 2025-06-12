@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     def __init__(self):
         self.connection_string = (
-            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"DRIVER={{ODBC Driver 13 for SQL Server}};"
             f"SERVER={Config.DB_SERVER};"
             f"DATABASE={Config.DB_NAME};"
             f"UID={Config.DB_USER};"
@@ -48,6 +48,7 @@ class DatabaseManager:
                     result = [dict(zip(columns, row)) for row in rows]
                 else:
                     result = cursor.fetchone()
+                    conn.commit()
             else:
                 result = None
                 conn.commit()
@@ -240,7 +241,7 @@ class DatabaseManager:
         VALUES (?, ?, ?, ?, ?)
         """
         result = self._execute_query(query, (datetime.now(), work_date, user_id, shift_id, vacancy_id), fetch=True)
-        return result['id'] if result else None
+        return result[0] if result else None
     
     async def get_user_reservations(self, user_id: int) -> List[Dict]:
         """Получение резерваций пользователя"""

@@ -5,13 +5,13 @@ class Config:
     """Конфигурация приложения"""
     
     # Токен бота Telegram
-    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+    BOT_TOKEN: str = os.getenv("BOT_TOKEN", '7899869655:AAG1nRWWcaW74WMgHd59Vw9egwLNk5VqvDI')
     
     # Настройки базы данных MSSQL
-    DB_SERVER: str = os.getenv("DB_SERVER", "localhost")
-    DB_NAME: str = os.getenv("DB_NAME", "WorkBot")
-    DB_USER: str = os.getenv("DB_USER", "sa")
-    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "your_password")
+    DB_SERVER: str = os.getenv("DB_SERVER", "192.168.2.59")
+    DB_NAME: str = os.getenv("DB_NAME", "tgbot_workers")
+    DB_USER: str = os.getenv("DB_USER", "tgbot_workers")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "oyRxj0t+@ujE0sI")
     
     # Настройки бота
     MAX_RESERVATIONS_PER_USER: int = 1  # Максимум записей на одну дату
