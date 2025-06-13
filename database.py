@@ -273,6 +273,7 @@ class DatabaseManager:
         INNER JOIN spr_Vacancies v ON r.id_vacancy = v.id
         INNER JOIN spr_Shifts s ON r.id_shift = s.id
         WHERE r.date_reservation >= ?
+        AND r.confirmed = 0
         ORDER BY r.date_time_event
         """
         return self._execute_query(query, (date.today(),), fetch=True) or []
