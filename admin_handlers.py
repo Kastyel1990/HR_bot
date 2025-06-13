@@ -215,6 +215,7 @@ def register_admin_handlers(dp, db: DatabaseManager):
             await callback.message.edit_text(f"{Emoji.SUCCESS} Нет неподтвержденных резерваций.", reply_markup=to_admin_menu())
             return
         for r in pending:
+            await callback.message.delete()
             msg = (
                 f"{Emoji.INFO} Новая резервация\n"
                 f"{MessageFormatter.format_reservation(r)}\n\n"
@@ -225,8 +226,8 @@ def register_admin_handlers(dp, db: DatabaseManager):
     @dp.callback_query(F.data.startswith("admin_confirm_"))
     async def admin_confirm_confirm(callback: types.CallbackQuery):
         res_id = int(callback.data.split("_")[-1])
-        await db.delete_reservation(res_id)
-        await callback.answer("Запись подтверждена и удалена из очереди.")
+        await db.confirm_reservation(res_id)
+        await callback.answer("Запись подтверждена.")
         await callback.message.edit_text(f"{Emoji.SUCCESS} Запись подтверждена.", reply_markup=to_admin_menu())
 
     @dp.callback_query(F.data.startswith("admin_cancel_"))

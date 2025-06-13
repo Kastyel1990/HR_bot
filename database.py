@@ -262,6 +262,14 @@ class DatabaseManager:
         query = "DELETE FROM tb_Reservation WHERE id = ?"
         self._execute_query(query, (reservation_id,))
     
+    async def confirm_reservation(self, reservation_id: int):
+        """Подтверждение резервации"""
+        query = """
+        UPDATE tb_Reservation
+        SET confirmed = 1
+        WHERE id = ?"""
+        self._execute_query(query, (reservation_id,))
+    
     async def get_pending_reservations(self) -> List[Dict]:
         """Получение неподтвержденных резерваций для админа"""
         query = """
