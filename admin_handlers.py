@@ -273,21 +273,18 @@ def register_admin_handlers(dp, db: DatabaseManager):
     async def admin_users(callback: types.CallbackQuery, state: FSMContext):
         users = await db.get_all_users()
         text = f"{Emoji.USERS} Все пользователи:\n"
-        for u in users: #[:10]:  # можно оставить первые 10 для информации
+        for u in users[:10]:  # показываем первые 10 для информации
             text += MessageFormatter.format_user_info(u) + "\n\n"
         text += "Для подробной работы введите ФИО, ID или номер телефона пользователя."
         await callback.message.edit_text(text, reply_markup=users_filter_keyboard())
         await state.set_state(AdminUserSearch.waiting_user_search)
-        current = await state.get_state()
-        print(f"FSM set to: {current}")  # Временно для отладки
 
-    @dp.message(F.state == AdminUserSearch.waiting_user_search)
+    @dp.message(AdminUserSearch.waiting_user_search)
     async def admin_find_user(message: types.Message, state: FSMContext):
-        current = await state.get_state()
-        print(f"FSM in handler: {current}")  # Для отладки
         query = message.text.strip()
         users = await db.get_all_users()
         found_users = []
+
         # ID (цифры)
         if query.isdigit():
             found_users = [u for u in users if str(u['tg_id']) == query or (u.get('phone') and query in u['phone'])]
@@ -295,19 +292,21 @@ def register_admin_handlers(dp, db: DatabaseManager):
             # Поиск по ФИО (без учета регистра)
             found_users = [u for u in users if query.lower() in u['full_name'].lower()]
             # Поиск по телефону
-            found_users += [u for u in users if u.get('phone') and query in u['phone']]
+            if not found_users:  # ищем по телефону только если не нашли по ФИО
+                found_users = [u for u in users if u.get('phone') and query in u['phone']]
 
         # Убираем дубликаты по tg_id
         unique_users = {u['tg_id']: u for u in found_users}.values()
 
         if not unique_users:
-            await message.answer("Пользователь не найден. Попробуйте еще раз или измените запрос.")
+            await message.answer("Пользователь не найден. Попробуйте еще раз или введите другие данные.")
             return
+
         if len(unique_users) > 1:
-            txt = "Найдено несколько пользователей:\n"
-            for u in unique_users:
-                txt += f"{u['full_name']} | ID: {u['tg_id']} | Тел: {u['phone']}\n"
-            txt += "Уточните данные или введите ID."
+            txt = "Найдено несколько пользователей:\n\n"
+            for u in list(unique_users)[:5]:  # показываем максимум 5
+                txt += f"👤 {u['full_name']}\n📱 ID: {u['tg_id']}\n📞 Тел: {u.get('phone', 'не указан')}\n\n"
+            txt += "Уточните данные или введите точный ID."
             await message.answer(txt)
             return
 
@@ -321,15 +320,23 @@ def register_admin_handlers(dp, db: DatabaseManager):
         await state.clear()
 
     @dp.callback_query(F.data.startswith("admin_users_filter_"))
+
     async def admin_users_filtered(callback: types.CallbackQuery, state: FSMContext):
         filter_type = callback.data.split("_")[-1]
         users = await db.get_all_users()
         today = date.today()
+
         if filter_type == "today":
             users = [u for u in users if u['date_of_reg'].date() == today]
-        text = f"{Emoji.USERS} Пользователи ({filter_type}):\n"
+
+        text = f"{Emoji.USERS} Пользователи ({filter_type}):\n\n"
         for u in users[:10]:
             text += MessageFormatter.format_user_info(u) + "\n\n"
+
+        if len(users) > 10:
+            text += f"... и еще {len(users) - 10} пользователей\n\n"
+
+        text += "Для поиска конкретного пользователя введите ФИО, ID или номер телефона."
         await callback.message.edit_text(text, reply_markup=users_filter_keyboard())
         await state.set_state(AdminUserSearch.waiting_user_search)
 

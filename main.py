@@ -30,6 +30,7 @@ register_user_handlers(dp, db)
 from admin_handlers import register_admin_handlers
 register_admin_handlers(dp, db)
 
+
 # FSM состояния
 class UserRegistration(StatesGroup):
     waiting_fullname = State()
