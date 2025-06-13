@@ -97,6 +97,27 @@ def confirmation_keyboard(res_id):
         #[InlineKeyboardButton(text=ButtonText.BACK, callback_data="admin_confirmations")]
     ])
 
+def report_dates_keyboard(dates: list):
+    """
+    dates — список дат (datetime.date) по которым есть данные
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    kb = []
+    # Кнопки "Вчера" и "Сегодня"
+    kb.append([
+        InlineKeyboardButton(text="Вчера", callback_data=f"admin_report_date_{yesterday.isoformat()}"),
+        InlineKeyboardButton(text="Сегодня", callback_data=f"admin_report_date_{today.isoformat()}")
+    ])
+    # Кнопки по датам из базы (до 7 дней)
+    for d in dates:
+        btn_text = d.strftime("%d.%m.%Y")
+        kb.append([InlineKeyboardButton(text=btn_text, callback_data=f"admin_report_date_{d.isoformat()}")])
+    kb.append([InlineKeyboardButton(text="Общий", callback_data="admin_report_overall")])
+    kb.append([InlineKeyboardButton(text=ButtonText.BACK, callback_data="back_to_admin")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
 # --- Основные обработчики ---
 def register_admin_handlers(dp, db: DatabaseManager):
     # Главное меню админа
@@ -289,15 +310,57 @@ def register_admin_handlers(dp, db: DatabaseManager):
 
     # --- Отчеты ---
     @dp.callback_query(F.data == "admin_reports")
-    async def admin_reports(callback: types.CallbackQuery):
+    async def admin_reports_menu(callback: types.CallbackQuery):
+        date_list = await db.get_dates_reservation()
+        kb = report_dates_keyboard(date_list)
+        await callback.message.edit_text(
+            f"{Emoji.STATS} Выберите дату для отчёта:",
+            reply_markup=kb
+        )
+
+    @dp.callback_query(F.data == "admin_report_overall")
+    async def admin_report_overall(callback: types.CallbackQuery):
+        # Текущий общий отчет (за 7 дней)
         stats = await db.get_statistics()
         if not stats:
             await callback.message.edit_text("Нет данных для отчета.", reply_markup=to_admin_menu())
             return
-        text = f"{Emoji.STATS} Статистика (за 7 дней):\n"
+        text = f"{Emoji.STATS} Общий отчет (за 7 дней):\n"
         for s in stats:
             text += MessageFormatter.format_statistics_item(s) + "\n"
         await callback.message.edit_text(text, reply_markup=to_admin_menu())
+
+    @dp.callback_query(F.data.startswith("admin_report_date_"))
+    async def admin_report_by_date(callback: types.CallbackQuery):
+        date_str = callback.data.replace("admin_report_date_", "")
+        try:
+            report_date = date.fromisoformat(date_str)
+        except Exception:
+            await callback.answer("Неверный формат даты.")
+            return
+        # Получаем статистику только за выбранную дату
+        stats = await db.get_statistics(start_date=report_date, end_date=report_date)
+        if not stats:
+            await callback.message.edit_text(
+                f"Нет данных для отчета за {report_date.strftime('%d.%m.%Y')}.",
+                reply_markup=to_admin_menu()
+            )
+            return
+        text = f"{Emoji.STATS} Отчет за {report_date.strftime('%d.%m.%Y')}:\n"
+        for s in stats:
+            text += MessageFormatter.format_statistics_item(s) + "\n"
+        await callback.message.edit_text(text, reply_markup=to_admin_menu())
+
+    # @dp.callback_query(F.data == "admin_reports")
+    # async def admin_reports(callback: types.CallbackQuery):
+    #     stats = await db.get_statistics()
+    #     if not stats:
+    #         await callback.message.edit_text("Нет данных для отчета.", reply_markup=to_admin_menu())
+    #         return
+    #     text = f"{Emoji.STATS} Статистика (за 7 дней):\n"
+    #     for s in stats:
+    #         text += MessageFormatter.format_statistics_item(s) + "\n"
+    #     await callback.message.edit_text(text, reply_markup=to_admin_menu())
 
     # --- Рассылка ---
     @dp.callback_query(F.data == "admin_broadcast")

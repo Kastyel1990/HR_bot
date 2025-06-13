@@ -17,7 +17,7 @@ class DatabaseManager:
             f"PWD={Config.DB_PASSWORD};"
             f"TrustServerCertificate=yes;"
         )
-        self._handbook_text = ""  # Временное хранение справочника
+        #self._handbook_text = ""  # Временное хранение справочника
     
     async def init_db(self):
         """Инициализация подключения к БД"""
@@ -287,6 +287,14 @@ class DatabaseManager:
         return self._execute_query(query, (date.today(),), fetch=True) or []
     
     # === СТАТИСТИКА ===
+
+    async def get_dates_reservation(self):
+        """Получаем уникальные даты из tb_NeedWorkers (или tb_Reservation, по твоей логике)"""
+        query = "SELECT DISTINCT date FROM tb_NeedWorkers WHERE date >= ? AND date <= ? ORDER BY date"
+        today = date.today()
+        end_date = today + timedelta(days=7)
+        rows = self._execute_query(query, (today, end_date), fetch=True)
+        return [r['date'] for r in rows] if rows else []
     
     async def get_statistics(self, start_date: date = None, end_date: date = None) -> List[Dict]:
         """Получение статистики по резервациям"""
@@ -321,12 +329,22 @@ class DatabaseManager:
     
     async def set_handbook(self, text: str):
         """Установка текста справочника"""
-        self._handbook_text = text
-        logger.info("Справочник обновлен")
+        # Если таблица пустая — вставить, иначе — обновить
+        check_query = "SELECT TOP 1 id FROM spr_Handbook"
+        existing = self._execute_query(check_query, fetch=True)
+        if existing:
+            update_query = "UPDATE spr_Handbook SET text=?, updated_at=GETDATE() WHERE id=?"
+            self._execute_query(update_query, (text, existing[0]['id']))
+        else:
+            insert_query = "INSERT INTO spr_Handbook (text) VALUES (?)"
+            self._execute_query(insert_query, (text,))
+        logger.info("Справочник обновлен в БД")
     
     async def get_handbook(self) -> str:
         """Получение текста справочника"""
-        return self._handbook_text
+        query = "SELECT TOP 1 text FROM spr_Handbook ORDER BY updated_at DESC"
+        result = self._execute_query(query, fetch=True)
+        return result[0]['text'] if result else ""
     
     # === УТИЛИТЫ ===
     
