@@ -142,11 +142,11 @@ def register_admin_handlers(dp, db: DatabaseManager):
 
     @dp.callback_query(F.data.startswith("admin_vacancy_"))
     async def admin_calendar_vacancy(callback: types.CallbackQuery, state: FSMContext):
+        # admin_vacancy_{date_str}_{shift_id}_{vacancy_id}
         _, _, date_str, shift_id, vacancy_id = callback.data.split("_")
         await state.update_data(selected_vacancy=int(vacancy_id))
         await callback.message.edit_text(
-            "Введите нужное количество работников:",
-            reply_markup=vacancy_keyboard(await db.get_vacancies(), date_str, shift_id)
+            "Введите нужное количество работников:"  # reply_markup не указываем!
         )
         await state.set_state(AdminCalendarFSM.entering_count)
 
