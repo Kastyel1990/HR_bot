@@ -70,9 +70,6 @@ def vacancy_keyboard(vacancies, date_str, shift_id):
     keyboard.append([InlineKeyboardButton(text=ButtonText.TO_MAIN, callback_data="back_to_admin")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-def after_count_keyboard(vacancies, date_str, shift_id):
-    return vacancy_keyboard(vacancies, date_str, shift_id)
-
 def users_filter_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Сегодня", callback_data="admin_users_filter_today")],
@@ -120,7 +117,18 @@ def register_admin_handlers(dp, db: DatabaseManager):
 
     @dp.callback_query(F.data.startswith("admin_cal_date_"))
     async def admin_calendar_date(callback: types.CallbackQuery, state: FSMContext):
-        date_str = callback.data.split("_")[-1]
+        date_str = callback.data.replace("admin_cal_date_", "")
+        shifts = await db.get_shifts()
+        await state.update_data(selected_date=date_str)
+        await callback.message.edit_text(
+            f"{Emoji.CALENDAR} {date_str}: выберите смену",
+            reply_markup=shift_keyboard(shifts, date_str)
+        )
+        await state.set_state(AdminCalendarFSM.selecting_shift)
+
+    @dp.callback_query(F.data.startswith("admin_shift_back_"))
+    async def admin_shift_back(callback: types.CallbackQuery, state: FSMContext):
+        date_str = callback.data.replace("admin_shift_back_", "")
         shifts = await db.get_shifts()
         await state.update_data(selected_date=date_str)
         await callback.message.edit_text(
@@ -131,22 +139,33 @@ def register_admin_handlers(dp, db: DatabaseManager):
 
     @dp.callback_query(F.data.startswith("admin_shift_"))
     async def admin_calendar_shift(callback: types.CallbackQuery, state: FSMContext):
-        _, _, date_str, shift_id = callback.data.split("_")
-        vacancies = await db.get_vacancies()
-        await state.update_data(selected_shift=int(shift_id))
-        await callback.message.edit_text(
-            "Выберите должность (вакансию):",
-            reply_markup=vacancy_keyboard(vacancies, date_str, shift_id)
-        )
-        await state.set_state(AdminCalendarFSM.selecting_vacancy)
+        # admin_shift_{date_str}_{shift_id}
+        parts = callback.data.split("_")
+        if len(parts) == 4:
+            _, _, date_str, shift_id = parts
+            try:
+                shift_id = int(shift_id)
+            except ValueError:
+                await callback.answer("Ошибка формата смены.")
+                return
+            await state.update_data(selected_shift=shift_id)
+            vacancies = await db.get_vacancies()
+            await callback.message.edit_text(
+                "Выберите должность (вакансию):",
+                reply_markup=vacancy_keyboard(vacancies, date_str, shift_id)
+            )
+            await state.set_state(AdminCalendarFSM.selecting_vacancy)
+        else:
+            await callback.answer("Ошибка перехода. Повторите выбор.")
 
     @dp.callback_query(F.data.startswith("admin_vacancy_"))
     async def admin_calendar_vacancy(callback: types.CallbackQuery, state: FSMContext):
         # admin_vacancy_{date_str}_{shift_id}_{vacancy_id}
         _, _, date_str, shift_id, vacancy_id = callback.data.split("_")
         await state.update_data(selected_vacancy=int(vacancy_id))
+        # Вводим число работников — без клавиатуры!
         await callback.message.edit_text(
-            "Введите нужное количество работников:"  # reply_markup не указываем!
+            "Введите нужное количество работников:"
         )
         await state.set_state(AdminCalendarFSM.entering_count)
 
@@ -166,21 +185,9 @@ def register_admin_handlers(dp, db: DatabaseManager):
         vacancies = await db.get_vacancies()
         await message.answer(
             f"{Emoji.SUCCESS} Данные обновлены. Хотите добавить по другой должности?",
-            reply_markup=after_count_keyboard(vacancies, date_str, shift_id)
+            reply_markup=vacancy_keyboard(vacancies, date_str, shift_id)
         )
         await state.set_state(AdminCalendarFSM.selecting_vacancy)
-
-    # Возврат к выбору смены
-    @dp.callback_query(F.data.startswith("admin_shift_back_"))
-    async def admin_shift_back(callback: types.CallbackQuery, state: FSMContext):
-        data = await state.get_data()
-        date_str = data.get('selected_date')
-        shifts = await db.get_shifts()
-        await callback.message.edit_text(
-            f"{Emoji.CALENDAR} {date_str}: выберите смену",
-            reply_markup=shift_keyboard(shifts, date_str)
-        )
-        await state.set_state(AdminCalendarFSM.selecting_shift)
 
     # --- Управление справочником ---
     @dp.callback_query(F.data == "admin_handbook")
