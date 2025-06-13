@@ -94,7 +94,7 @@ def confirmation_keyboard(res_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=ButtonText.CONFIRM, callback_data=f"admin_confirm_{res_id}"),
          InlineKeyboardButton(text=ButtonText.CANCEL, callback_data=f"admin_cancel_{res_id}")],
-        [InlineKeyboardButton(text=ButtonText.BACK, callback_data="admin_confirmations")]
+        #[InlineKeyboardButton(text=ButtonText.BACK, callback_data="admin_confirmations")]
     ])
 
 # --- Основные обработчики ---
