@@ -20,6 +20,10 @@ class AdminHandbookFSM(StatesGroup):
 class AdminBroadcastFSM(StatesGroup):
     waiting_text = State()
 
+# --- Состояния для поиска пользователя ---
+class AdminUserSearch(StatesGroup):
+    waiting_user_search = State()
+
 # --- Клавиатуры ---
 def admin_main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -117,6 +121,12 @@ def report_dates_keyboard(dates: list):
     kb.append([InlineKeyboardButton(text="Общий", callback_data="admin_report_overall")])
     kb.append([InlineKeyboardButton(text=ButtonText.BACK, callback_data="back_to_admin")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
+
+def report_back_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=ButtonText.BACK, callback_data="admin_reports")],
+        [InlineKeyboardButton(text=ButtonText.TO_MAIN, callback_data="back_to_admin")]
+    ])
 
 # --- Основные обработчики ---
 def register_admin_handlers(dp, db: DatabaseManager):
@@ -260,13 +270,51 @@ def register_admin_handlers(dp, db: DatabaseManager):
 
     # --- Пользователи ---
     @dp.callback_query(F.data == "admin_users")
-    async def admin_users(callback: types.CallbackQuery):
+    async def admin_users(callback: types.CallbackQuery, state: FSMContext):
         users = await db.get_all_users()
         text = f"{Emoji.USERS} Все пользователи:\n"
-        for u in users[:10]:
+        for u in users: #[:10]:  # можно оставить первые 10 для информации
             text += MessageFormatter.format_user_info(u) + "\n\n"
-        text += "Для подробной работы выберите фильтр или пользователя."
+        text += "Для подробной работы введите ФИО, ID или номер телефона пользователя."
         await callback.message.edit_text(text, reply_markup=users_filter_keyboard())
+        await state.set_state(AdminUserSearch.waiting_user_search)
+
+    @dp.message(F.state == AdminUserSearch.waiting_user_search)
+    async def admin_find_user(message: types.Message, state: FSMContext):
+        query = message.text.strip()
+        users = await db.get_all_users()
+        found_users = []
+        # ID (цифры)
+        if query.isdigit():
+            found_users = [u for u in users if str(u['tg_id']) == query or (u.get('phone') and query in u['phone'])]
+        else:
+            # Поиск по ФИО (без учета регистра)
+            found_users = [u for u in users if query.lower() in u['full_name'].lower()]
+            # Поиск по телефону
+            found_users += [u for u in users if u.get('phone') and query in u['phone']]
+
+        # Убираем дубликаты по tg_id
+        unique_users = {u['tg_id']: u for u in found_users}.values()
+
+        if not unique_users:
+            await message.answer("Пользователь не найден. Попробуйте еще раз или измените запрос.")
+            return
+        if len(unique_users) > 1:
+            txt = "Найдено несколько пользователей:\n"
+            for u in unique_users:
+                txt += f"{u['full_name']} | ID: {u['tg_id']} | Тел: {u['phone']}\n"
+            txt += "Уточните данные или введите ID."
+            await message.answer(txt)
+            return
+
+        # Один пользователь найден
+        user = list(unique_users)[0]
+        info = MessageFormatter.format_user_info(user)
+        await message.answer(
+            info,
+            reply_markup=user_action_keyboard(user)
+        )
+        await state.clear()
 
     @dp.callback_query(F.data.startswith("admin_users_filter_"))
     async def admin_users_filtered(callback: types.CallbackQuery):
@@ -328,7 +376,7 @@ def register_admin_handlers(dp, db: DatabaseManager):
         text = f"{Emoji.STATS} Общий отчет (за 7 дней):\n"
         for s in stats:
             text += MessageFormatter.format_statistics_item(s) + "\n"
-        await callback.message.edit_text(text, reply_markup=to_admin_menu())
+        await callback.message.edit_text(text, reply_markup=report_back_keyboard())
 
     @dp.callback_query(F.data.startswith("admin_report_date_"))
     async def admin_report_by_date(callback: types.CallbackQuery):
@@ -349,7 +397,7 @@ def register_admin_handlers(dp, db: DatabaseManager):
         text = f"{Emoji.STATS} Отчет за {report_date.strftime('%d.%m.%Y')}:\n"
         for s in stats:
             text += MessageFormatter.format_statistics_item(s) + "\n"
-        await callback.message.edit_text(text, reply_markup=to_admin_menu())
+        await callback.message.edit_text(text, reply_markup=report_back_keyboard())
 
     # @dp.callback_query(F.data == "admin_reports")
     # async def admin_reports(callback: types.CallbackQuery):
