@@ -278,9 +278,13 @@ def register_admin_handlers(dp, db: DatabaseManager):
         text += "Для подробной работы введите ФИО, ID или номер телефона пользователя."
         await callback.message.edit_text(text, reply_markup=users_filter_keyboard())
         await state.set_state(AdminUserSearch.waiting_user_search)
+        current = await state.get_state()
+        print(f"FSM set to: {current}")  # Временно для отладки
 
     @dp.message(F.state == AdminUserSearch.waiting_user_search)
     async def admin_find_user(message: types.Message, state: FSMContext):
+        current = await state.get_state()
+        print(f"FSM in handler: {current}")  # Для отладки
         query = message.text.strip()
         users = await db.get_all_users()
         found_users = []
@@ -317,7 +321,7 @@ def register_admin_handlers(dp, db: DatabaseManager):
         await state.clear()
 
     @dp.callback_query(F.data.startswith("admin_users_filter_"))
-    async def admin_users_filtered(callback: types.CallbackQuery):
+    async def admin_users_filtered(callback: types.CallbackQuery, state: FSMContext):
         filter_type = callback.data.split("_")[-1]
         users = await db.get_all_users()
         today = date.today()
@@ -327,6 +331,7 @@ def register_admin_handlers(dp, db: DatabaseManager):
         for u in users[:10]:
             text += MessageFormatter.format_user_info(u) + "\n\n"
         await callback.message.edit_text(text, reply_markup=users_filter_keyboard())
+        await state.set_state(AdminUserSearch.waiting_user_search)
 
     @dp.callback_query(F.data.startswith("admin_ban_"))
     async def admin_ban(callback: types.CallbackQuery):
